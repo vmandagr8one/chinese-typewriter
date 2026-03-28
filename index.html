@@ -2,50 +2,62 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Luminous Stroke Typewriter</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Vern's Stroke Typewriter</title>
     <style>
-        body { font-family: 'Courier New', Courier, monospace; text-align: center; background: #eef2f3; padding: 20px; color: #2c3e50; }
-        .container { max-width: 400px; margin: auto; background: #fff; padding: 25px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); border: 1px solid #bdc3c7; }
-        h2 { margin-top: 0; color: #2980b9; text-transform: uppercase; letter-spacing: 2px; }
-        #canvas { border: 3px solid #34495e; background: #fff; touch-action: none; margin: 15px auto; cursor: crosshair; display: block; border-radius: 5px; }
-        .btn-group { display: flex; gap: 10px; margin-bottom: 15px; }
-        button { flex: 1; padding: 12px; font-weight: bold; cursor: pointer; border: none; border-radius: 4px; transition: 0.1s; }
-        .btn-clear { background: #c0392b; color: white; }
-        .btn-go { background: #27ae60; color: white; }
-        button:active { transform: translateY(2px); }
-        #status-bar { font-size: 12px; color: #7f8c8d; margin-bottom: 10px; height: 18px; font-style: italic; }
-        .output-char { font-size: 80px; margin: 10px 0; font-weight: bold; color: #2c3e50; }
-        .others { color: #95a5a6; font-size: 18px; letter-spacing: 4px; min-height: 24px; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background: #f8f9fa; padding: 20px; color: #333; }
+        .container { max-width: 420px; margin: auto; background: white; padding: 25px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        h2 { margin-top: 0; color: #007bff; letter-spacing: 1px; }
+        #canvas { border: 3px solid #dee2e6; border-radius: 10px; background: #fff; touch-action: none; margin: 15px auto; cursor: crosshair; display: block; }
+        .btn-group { display: flex; gap: 10px; margin-bottom: 20px; }
+        button { flex: 1; padding: 15px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 14px; }
+        .btn-clear { background: #ff4757; color: white; }
+        .btn-go { background: #2ed573; color: white; }
+        button:active { transform: scale(0.98); opacity: 0.9; }
+        #status-bar { font-size: 13px; color: #747d8c; margin-bottom: 10px; height: 18px; font-weight: 500; }
+        .output-char { font-size: 80px; font-weight: bold; color: #2f3542; margin: 10px 0; }
+        .others { color: #a4b0be; font-size: 18px; letter-spacing: 5px; min-height: 24px; }
+        .log-btn { width: 100%; background: #1e90ff; color: white; margin-top: 10px; }
+        #log-list { text-align: left; margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px; }
+        .log-item { background: #f1f2f6; padding: 10px; border-radius: 8px; margin-bottom: 5px; display: flex; justify-content: space-between; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Typewriter v2.0</h2>
-    <div id="status-bar">Diagnostic: System Ready</div>
+    <h2>Typewriter v3.0</h2>
+    <div id="status-bar">System Ready</div>
     
-    <canvas id="canvas" width="300" height="300"></canvas>
+    <canvas id="canvas" width="320" height="320"></canvas>
     
     <div class="btn-group">
-        <button class="btn-clear" onclick="resetPad()">RESET</button>
-        <button class="btn-go" onclick="runDiagnostic()">IDENTIFY</button>
+        <button class="btn-clear" onclick="resetPad()">CLEAR</button>
+        <button class="btn-go" onclick="recognize()">IDENTIFY</button>
     </div>
 
     <div id="display">
         <div class="output-char" id="main-result">?</div>
         <div class="others" id="sub-results"></div>
     </div>
+
+    <button class="log-btn" onclick="saveToLog()">SAVE TO CONSULTATION LOG</button>
+
+    <div id="log-list"></div>
 </div>
 
 <script>
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     let isDrawing = false;
-    let strokeData = []; 
-    let xArr = [], yArr = [], tArr = [];
+    let strokes = []; 
+    let curX = [], curY = [], curT = [];
+    let lastChar = "";
 
-    // Capture Canvas Position
+    // ---------------------------------------------------------
+    // 1. PASTE YOUR GOOGLE SCRIPT URL BELOW
+    // ---------------------------------------------------------
+    const bridgeUrl = "https://script.google.com/macros/s/AKfycbzaKgVBppEs2qDQhN5AR_tVhLJpOKAZ-SH_jenQooaG1fK8bBiFZym03JkjdZtwPEpkAQ/exec";
+
     function getXY(e) {
         const rect = canvas.getBoundingClientRect();
         const cx = e.touches ? e.touches[0].clientX : e.clientX;
@@ -53,94 +65,92 @@
         return [cx - rect.left, cy - rect.top];
     }
 
-    // Input Handlers
-    canvas.addEventListener('mousedown', (e) => {
+    canvas.addEventListener('mousedown', start);
+    canvas.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', stop);
+    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); start(e); });
+    canvas.addEventListener('touchmove', (e) => { e.preventDefault(); move(e); });
+    canvas.addEventListener('touchend', stop);
+
+    function start(e) {
         isDrawing = true;
-        xArr = []; yArr = []; tArr = [];
+        curX = []; curY = []; curT = [];
         const [x, y] = getXY(e);
         ctx.beginPath();
         ctx.lineWidth = 6;
         ctx.lineCap = 'round';
-        ctx.strokeStyle = '#2c3e50';
+        ctx.strokeStyle = '#2f3542';
         ctx.moveTo(x, y);
-    });
+    }
 
-    canvas.addEventListener('mousemove', (e) => {
+    function move(e) {
         if (!isDrawing) return;
         const [x, y] = getXY(e);
         ctx.lineTo(x, y);
         ctx.stroke();
-        xArr.push(Math.round(x));
-        yArr.push(Math.round(y));
-        tArr.push(Date.now());
-    });
+        curX.push(Math.round(x));
+        curY.push(Math.round(y));
+        curT.push(Date.now());
+    }
 
-    window.addEventListener('mouseup', () => {
+    function stop() {
         if (!isDrawing) return;
         isDrawing = false;
-        strokeData.push([xArr, yArr, tArr]);
-    });
-
-    // Touch support for testing on phone later
-    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); });
+        strokes.push([curX, curY, curT]);
+    }
 
     function resetPad() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        strokeData = [];
+        strokes = [];
         document.getElementById('main-result').innerText = "?";
         document.getElementById('sub-results').innerText = "";
-        document.getElementById('status-bar').innerText = "Diagnostic: Ready";
+        document.getElementById('status-bar').innerText = "Canvas Cleared";
     }
 
-    function runDiagnostic() {
-        if (strokeData.length === 0) {
-            document.getElementById('status-bar').innerText = "Error: No strokes detected.";
+    async function recognize() {
+        if (strokes.length === 0) return;
+        if (bridgeUrl.includes("PASTE_YOUR")) {
+            document.getElementById('status-bar').innerText = "Error: Bridge URL missing!";
             return;
         }
-        
-        document.getElementById('status-bar').innerText = "Diagnostic: Sending to Google...";
-        
-        const payload = JSON.stringify({
-            "options": "enable_pre_space",
-            "requests": [{
-                "writing_guide": { "width": 300, "height": 300 },
-                "ink": strokeData,
-                "language": "zh"
-            }]
-        });
 
-        const callbackID = 'callback_' + Date.now();
-        
-        // Window Listener for the Response
-        window[callbackID] = function(data) {
+        document.getElementById('status-bar').innerText = "Connecting to Bridge...";
+
+        try {
+            // We send the ink data as a URL parameter to your Google Script
+            const response = await fetch(`${bridgeUrl}?ink=${encodeURIComponent(JSON.stringify(strokes))}`);
+            const data = await response.json();
+            
             if (data && data[0] === "SUCCESS") {
-                const chars = data[1][0][1];
-                document.getElementById('main-result').innerText = chars[0];
-                document.getElementById('sub-results').innerText = chars.slice(1, 6).join(' ');
-                document.getElementById('status-bar').innerText = "Diagnostic: Success.";
+                const results = data[1][0][1];
+                lastChar = results[0];
+                document.getElementById('main-result').innerText = lastChar;
+                document.getElementById('sub-results').innerText = results.slice(1, 6).join(' ');
+                document.getElementById('status-bar').innerText = "Match Found";
             } else {
-                document.getElementById('status-bar').innerText = "Diagnostic: Server returned error.";
+                document.getElementById('status-bar').innerText = "Engine returned no match.";
             }
-            cleanup();
-        };
-
-        const scriptTag = document.createElement('script');
-        scriptTag.id = "api-script";
-        scriptTag.onerror = () => {
-            document.getElementById('status-bar').innerText = "CRITICAL: Script Blocked by Chrome.";
-            cleanup();
-        };
-        
-        // This is the specific handwriting engine URL
-        scriptTag.src = `https://www.google.com/inputtools/request?ime=handwriting&app=mobilesearch&cs=1&oe=UTF-8&itc=zh-t-i0-handwrit&input=${encodeURIComponent(payload)}&callback=${callbackID}`;
-        
-        function cleanup() {
-            if (document.getElementById("api-script")) document.body.removeChild(scriptTag);
-            delete window[callbackID];
+        } catch (error) {
+            document.getElementById('status-bar').innerText = "Bridge Error. Check Deployment.";
+            console.error(error);
         }
-
-        document.body.appendChild(scriptTag);
     }
+
+    function saveToLog() {
+        if (!lastChar || lastChar === "?") return;
+        let log = JSON.parse(localStorage.getItem('twLog') || '[]');
+        log.unshift({ c: lastChar, t: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) });
+        localStorage.setItem('twLog', JSON.stringify(log.slice(0, 20)));
+        renderLog();
+    }
+
+    function renderLog() {
+        const list = document.getElementById('log-list');
+        const log = JSON.parse(localStorage.getItem('twLog') || '[]');
+        list.innerHTML = log.map(i => `<div class="log-item"><strong>${i.c}</strong><span>${i.t}</span></div>`).join('');
+    }
+
+    renderLog();
 </script>
 
 </body>

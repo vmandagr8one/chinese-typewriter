@@ -1,180 +1,146 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Luminous Stroke Typewriter</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background: #f0f2f5; padding: 20px; color: #1c1e21; }
-        .container { max-width: 420px; margin: auto; background: white; padding: 25px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
-        h2 { margin-bottom: 5px; color: #1877f2; }
-        #canvas { border: 3px solid #cbd5e0; border-radius: 12px; background: #fff; cursor: crosshair; touch-action: none; display: block; margin: 15px auto; }
-        .controls { display: flex; gap: 12px; justify-content: center; margin-bottom: 20px; }
-        button { padding: 12px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; transition: all 0.2s ease; }
-        .btn-clear { background: #fa3e3e; color: white; }
-        .btn-recognize { background: #00a400; color: white; flex-grow: 1; }
-        button:hover { opacity: 0.9; transform: translateY(-1px); }
-        #result-box { min-height: 100px; border-top: 2px solid #f0f2f5; padding-top: 15px; }
-        .char-output { font-size: 64px; font-weight: bold; color: #1c1e21; margin: 10px 0; }
-        .candidates { color: #65676b; font-size: 16px; min-height: 1.2em; }
-        #status { font-size: 13px; color: #8a8d91; margin-bottom: 5px; }
-        #log-container { margin-top: 25px; text-align: left; max-height: 200px; overflow-y: auto; }
-        .log-item { background: #f0f2f5; padding: 10px; margin-bottom: 6px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
-        .save-btn { width: 100%; background: #1877f2; color: white; margin-top: 10px; }
+        body { font-family: 'Courier New', Courier, monospace; text-align: center; background: #eef2f3; padding: 20px; color: #2c3e50; }
+        .container { max-width: 400px; margin: auto; background: #fff; padding: 25px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); border: 1px solid #bdc3c7; }
+        h2 { margin-top: 0; color: #2980b9; text-transform: uppercase; letter-spacing: 2px; }
+        #canvas { border: 3px solid #34495e; background: #fff; touch-action: none; margin: 15px auto; cursor: crosshair; display: block; border-radius: 5px; }
+        .btn-group { display: flex; gap: 10px; margin-bottom: 15px; }
+        button { flex: 1; padding: 12px; font-weight: bold; cursor: pointer; border: none; border-radius: 4px; transition: 0.1s; }
+        .btn-clear { background: #c0392b; color: white; }
+        .btn-go { background: #27ae60; color: white; }
+        button:active { transform: translateY(2px); }
+        #status-bar { font-size: 12px; color: #7f8c8d; margin-bottom: 10px; height: 18px; font-style: italic; }
+        .output-char { font-size: 80px; margin: 10px 0; font-weight: bold; color: #2c3e50; }
+        .others { color: #95a5a6; font-size: 18px; letter-spacing: 4px; min-height: 24px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Stroke Typewriter</h2>
-    <div id="status">Ready to scan patterns...</div>
+    <h2>Typewriter v2.0</h2>
+    <div id="status-bar">Diagnostic: System Ready</div>
     
-    <canvas id="canvas" width="320" height="320"></canvas>
+    <canvas id="canvas" width="300" height="300"></canvas>
     
-    <div class="controls">
-        <button class="btn-clear" onclick="clearCanvas()">Clear</button>
-        <button class="btn-recognize" onclick="recognize()">Identify Pattern</button>
+    <div class="btn-group">
+        <button class="btn-clear" onclick="resetPad()">RESET</button>
+        <button class="btn-go" onclick="runDiagnostic()">IDENTIFY</button>
     </div>
 
-    <div id="result-box">
-        <div class="char-output" id="top-char">?</div>
-        <div class="candidates" id="other-chars"></div>
-    </div>
-
-    <button class="save-btn" onclick="saveToLog()">Save to Consultation Log</button>
-
-    <div id="log-container">
-        <h4 style="margin: 10px 0;">Recent Unknowns</h4>
-        <div id="log-list"></div>
+    <div id="display">
+        <div class="output-char" id="main-result">?</div>
+        <div class="others" id="sub-results"></div>
     </div>
 </div>
 
 <script>
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    let drawing = false;
-    let strokes = []; // Google format: [ [x1,x2...], [y1,y2...], [t1,t2...] ]
-    let currentStrokeX = [];
-    let currentStrokeY = [];
-    let currentStrokeT = [];
-    let lastTopChar = "";
+    let isDrawing = false;
+    let strokeData = []; 
+    let xArr = [], yArr = [], tArr = [];
 
-    function getPos(e) {
+    // Capture Canvas Position
+    function getXY(e) {
         const rect = canvas.getBoundingClientRect();
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        return [clientX - rect.left, clientY - rect.top];
+        const cx = e.touches ? e.touches[0].clientX : e.clientX;
+        const cy = e.touches ? e.touches[0].clientY : e.clientY;
+        return [cx - rect.left, cy - rect.top];
     }
 
-    function startDrawing(e) {
-        drawing = true;
-        currentStrokeX = [];
-        currentStrokeY = [];
-        currentStrokeT = [];
-        const [x, y] = getPos(e);
+    // Input Handlers
+    canvas.addEventListener('mousedown', (e) => {
+        isDrawing = true;
+        xArr = []; yArr = []; tArr = [];
+        const [x, y] = getXY(e);
         ctx.beginPath();
-        ctx.moveTo(x, y);
-    }
-
-    function moveDrawing(e) {
-        if (!drawing) return;
-        const [x, y] = getPos(e);
-        ctx.lineWidth = 5;
+        ctx.lineWidth = 6;
         ctx.lineCap = 'round';
-        ctx.strokeStyle = '#1c1e21';
+        ctx.strokeStyle = '#2c3e50';
+        ctx.moveTo(x, y);
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+        if (!isDrawing) return;
+        const [x, y] = getXY(e);
         ctx.lineTo(x, y);
         ctx.stroke();
-        
-        currentStrokeX.push(Math.round(x));
-        currentStrokeY.push(Math.round(y));
-        currentStrokeT.push(Date.now());
-    }
+        xArr.push(Math.round(x));
+        yArr.push(Math.round(y));
+        tArr.push(Date.now());
+    });
 
-    function stopDrawing() {
-        if (!drawing) return;
-        drawing = false;
-        if (currentStrokeX.length > 0) {
-            strokes.push([currentStrokeX, currentStrokeY, currentStrokeT]);
-        }
-    }
+    window.addEventListener('mouseup', () => {
+        if (!isDrawing) return;
+        isDrawing = false;
+        strokeData.push([xArr, yArr, tArr]);
+    });
 
-    // Event Listeners for PC and Mobile
-    canvas.addEventListener('mousedown', startDrawing);
-    canvas.addEventListener('mousemove', moveDrawing);
-    window.addEventListener('mouseup', stopDrawing);
-    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDrawing(e); });
-    canvas.addEventListener('touchmove', (e) => { e.preventDefault(); moveDrawing(e); });
-    canvas.addEventListener('touchend', stopDrawing);
+    // Touch support for testing on phone later
+    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); });
 
-    function clearCanvas() {
+    function resetPad() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        strokes = [];
-        document.getElementById('top-char').innerText = "?";
-        document.getElementById('other-chars').innerText = "";
-        document.getElementById('status').innerText = "Canvas cleared.";
-        lastTopChar = "";
+        strokeData = [];
+        document.getElementById('main-result').innerText = "?";
+        document.getElementById('sub-results').innerText = "";
+        document.getElementById('status-bar').innerText = "Diagnostic: Ready";
     }
 
-    // JSONP RECOGNITION (Bypasses GitHub CORS issues)
-    function recognize() {
-        if (strokes.length === 0) {
-            document.getElementById('status').innerText = "Draw something first!";
+    function runDiagnostic() {
+        if (strokeData.length === 0) {
+            document.getElementById('status-bar').innerText = "Error: No strokes detected.";
             return;
         }
-        document.getElementById('status').innerText = "Consulting Google Engine...";
-
-        const data = JSON.stringify({
+        
+        document.getElementById('status-bar').innerText = "Diagnostic: Sending to Google...";
+        
+        const payload = JSON.stringify({
             "options": "enable_pre_space",
             "requests": [{
-                "writing_guide": { "width": 320, "height": 320 },
-                "ink": strokes,
+                "writing_guide": { "width": 300, "height": 300 },
+                "ink": strokeData,
                 "language": "zh"
             }]
         });
 
-        const callbackName = 'google_callback_' + Math.floor(Math.random() * 1000000);
-        window[callbackName] = function(res) {
-            if (res && res[0] === "SUCCESS") {
-                const candidates = res[1][0][1];
-                lastTopChar = candidates[0];
-                document.getElementById('top-char').innerText = lastTopChar;
-                document.getElementById('other-chars').innerText = candidates.slice(1, 6).join('  ');
-                document.getElementById('status').innerText = "Pattern Matched!";
+        const callbackID = 'callback_' + Date.now();
+        
+        // Window Listener for the Response
+        window[callbackID] = function(data) {
+            if (data && data[0] === "SUCCESS") {
+                const chars = data[1][0][1];
+                document.getElementById('main-result').innerText = chars[0];
+                document.getElementById('sub-results').innerText = chars.slice(1, 6).join(' ');
+                document.getElementById('status-bar').innerText = "Diagnostic: Success.";
             } else {
-                document.getElementById('status').innerText = "No results. Try drawing slower.";
+                document.getElementById('status-bar').innerText = "Diagnostic: Server returned error.";
             }
-            delete window[callbackName];
-            document.body.removeChild(script);
+            cleanup();
         };
 
-        const script = document.createElement('script');
-        script.src = `https://www.google.com/inputtools/request?ime=handwriting&app=mobilesearch&cs=1&oe=UTF-8&itc=zh-t-i0-handwrit&input=${encodeURIComponent(data)}&callback=${callbackName}`;
-        document.body.appendChild(script);
-    }
-
-    function saveToLog() {
-        if (!lastTopChar || lastTopChar === "?") return;
-        let log = JSON.parse(localStorage.getItem('typewriterLog') || '[]');
-        // Don't save duplicates in a row
-        if (log.length > 0 && log[0].char === lastTopChar) return;
+        const scriptTag = document.createElement('script');
+        scriptTag.id = "api-script";
+        scriptTag.onerror = () => {
+            document.getElementById('status-bar').innerText = "CRITICAL: Script Blocked by Chrome.";
+            cleanup();
+        };
         
-        log.unshift({ char: lastTopChar, time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) });
-        localStorage.setItem('typewriterLog', JSON.stringify(log.slice(0, 25)));
-        renderLog();
-    }
+        // This is the specific handwriting engine URL
+        scriptTag.src = `https://www.google.com/inputtools/request?ime=handwriting&app=mobilesearch&cs=1&oe=UTF-8&itc=zh-t-i0-handwrit&input=${encodeURIComponent(payload)}&callback=${callbackID}`;
+        
+        function cleanup() {
+            if (document.getElementById("api-script")) document.body.removeChild(scriptTag);
+            delete window[callbackID];
+        }
 
-    function renderLog() {
-        const logList = document.getElementById('log-list');
-        const log = JSON.parse(localStorage.getItem('typewriterLog') || '[]');
-        logList.innerHTML = log.map(item => `
-            <div class="log-item">
-                <strong style="font-size: 24px;">${item.char}</strong>
-                <span style="font-size: 11px; color: #8a8d91;">${item.time}</span>
-            </div>
-        `).join('');
+        document.body.appendChild(scriptTag);
     }
-
-    renderLog();
 </script>
 
 </body>

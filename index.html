@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Luminous Stroke Typewriter</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #f4f4f9; padding: 20px; color: #333; }
+        .container { max-width: 400px; margin: auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        h2 { margin-bottom: 10px; color: #2c3e50; }
+        #canvas { border: 2px solid #34495e; border-radius: 8px; background: #fff; cursor: crosshair; touch-action: none; }
+        .controls { margin-top: 15px; display: flex; gap: 10px; justify-content: center; }
+        button { padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .btn-clear { background: #e74c3c; color: white; }
+        .btn-recognize { background: #27ae60; color: white; }
+        button:hover { opacity: 0.8; }
+        #result-box { margin-top: 20px; min-height: 80px; border-top: 1px solid #eee; padding-top: 15px; }
+        .char-output { font-size: 48px; color: #2c3e50; margin: 10px 0; }
+        .candidates { color: #7f8c8d; font-size: 14px; }
+        #log-container { margin-top: 30px; text-align: left; }
+        .log-item { background: #ecf0f1; padding: 8px; margin-bottom: 5px; border-radius: 4px; display: flex; justify-content: space-between; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Stroke Typewriter</h2>
+    <p style="font-size: 0.8em; color: #666;">Copy the character from your book below:</p>
+    
+    <canvas id="canvas" width="300" height="300"></canvas>
+    
+    <div class="controls">
+        <button class="btn-clear" onclick="clearCanvas()">Clear</button>
+        <button class="btn-recognize" onclick="recognize()">Identify</button>
+    </div>
+
+    <div id="result-box">
+        <div id="status" style="font-size: 14px; color: #95a5a6;">Ready</div>
+        <div class="char-output" id="top-char">?</div>
+        <div class="candidates" id="other-chars"></div>
+    </div>
+
+    <button onclick="saveToLog()" style="width: 100%; background: #3498db; color: white; margin-top: 10px;">Save to Consultation Log</button>
+
+    <div id="log-container">
+        <h3>Saved for Later</h3>
+        <div id="log-list"></div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let drawing = false;
+    let strokes = [];
+    let currentStroke = [];
+    let lastTopChar = "";
+
+    // Drawing Logic
+    function getPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return [clientX - rect.left, clientY - rect.top];
+    }
+
+    function startDrawing(e) {
+        drawing = true;
+        currentStroke = [[], [], []]; // x, y, t
+        const [x, y] = getPos(e);
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+    }
+
+    function moveDrawing(e) {
+        if (!drawing) return;
+        const [x, y] = getPos(e);
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = '#2c3e50';
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        
+        currentStroke[0].push(Math.round(x));
+        currentStroke[1].push(Math.round(y));
+        currentStroke[2].push(Date.now());
+    }
+
+    function stopDrawing() {
+        if (!drawing) return;
+        drawing = false;
+        strokes.push(currentStroke);
+    }
+
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', moveDrawing);
+    window.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDrawing(e); });
+    canvas.addEventListener('touchmove', (e) => { e.preventDefault(); moveDrawing(e); });
+    canvas.addEventListener('touchend', stopDrawing);
+
+    function clearCanvas() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        strokes = [];
+        document.getElementById('top-char').innerText = "?";
+        document.getElementById('other-chars').innerText = "";
+        document.getElementById('status').innerText = "Ready";
+    }
+
+    async function recognize() {
+        if (strokes.length === 0) return;
+        document.getElementById('status').innerText = "Consulting Google...";
+
+        const data = {
+            "app_cookie_id": "helper",
+            "device": "web",
+            "input_type": "0",
+            "requests": [{
+                "writing_guide": { "width": 300, "height": 300 },
+                "ink": strokes,
+                "language": "zh"
+            }]
+        };
+
+        try {
+            const response = await fetch('https://www.google.com/inputtools/request?ime=handwriting&app=mobilesearch&cs=1&oe=UTF-8', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+            const res = await response.json();
+            const candidates = res[1][0][1];
+            
+            lastTopChar = candidates[0];
+            document.getElementById('top-char').innerText = lastTopChar;
+            document.getElementById('other-chars').innerText = "Others: " + candidates.slice(1, 5).join(', ');
+            document.getElementById('status').innerText = "Pattern Matched!";
+        } catch (e) {
+            document.getElementById('status').innerText = "Error: Check connection.";
+        }
+    }
+
+    function saveToLog() {
+        if (!lastTopChar) return;
+        let log = JSON.parse(localStorage.getItem('typewriterLog') || '[]');
+        log.unshift({ char: lastTopChar, time: new Date().toLocaleTimeString() });
+        localStorage.setItem('typewriterLog', JSON.stringify(log.slice(0, 20))); // Keep last 20
+        renderLog();
+    }
+
+    function renderLog() {
+        const logList = document.getElementById('log-list');
+        const log = JSON.parse(localStorage.getItem('typewriterLog') || '[]');
+        logList.innerHTML = log.map(item => `
+            <div class="log-item">
+                <strong>${item.char}</strong>
+                <span style="font-size: 10px; color: #95a5a6;">${item.time}</span>
+            </div>
+        `).join('');
+    }
+
+    renderLog(); // Load on start
+</script>
+
+</body>
+</html>

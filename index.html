@@ -56,7 +56,17 @@
     // ---------------------------------------------------------
     // 1. PASTE YOUR GOOGLE SCRIPT URL BELOW
     // ---------------------------------------------------------
-    const bridgeUrl = "https://script.google.com/macros/s/AKfycbzaKgVBppEs2qDQhN5AR_tVhLJpOKAZ-SH_jenQooaG1fK8bBiFZym03JkjdZtwPEpkAQ/exec";
+    const encodedBridge = "aHR0cHM6Ly9zY3JpcHQuZ29vZ2xlLmNvbS9tYWNyb3Mvcy9BS2Z5Y2J6YUtnVkJwcEVzMnFEUWhONUFSX3RWaExKcE9LQVotU0hfamVuUW9vYUcxZks4YkJpRlp5bTAzSmtqZFp0d1BFcGtBUS9leGVj";
+
+    // 2. This is the "Decoder Ring" function
+    function getBridge() {
+        try {
+            return atob(encodedBridge);
+        } catch(e) {
+            console.error("System Check: Decoder Error");
+            return "";
+        }
+    }
 
     function getXY(e) {
         const rect = canvas.getBoundingClientRect();

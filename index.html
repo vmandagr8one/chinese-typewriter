@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Vern's Stroke Typewriter</title>
+    <title>Vern's Stroke Typewriter v3.1</title>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background: #f8f9fa; padding: 20px; color: #333; }
         .container { max-width: 420px; margin: auto; background: white; padding: 25px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
@@ -25,7 +25,7 @@
 <body>
 
 <div class="container">
-    <h2>Typewriter v3.0</h2>
+    <h2>Typewriter v3.1</h2>
     <div id="status-bar">System Ready</div>
     
     <canvas id="canvas" width="320" height="320"></canvas>
@@ -54,16 +54,18 @@
     let lastChar = "";
 
     // ---------------------------------------------------------
-    // 1. PASTE YOUR GOOGLE SCRIPT URL BELOW
+    // GHOST BRIDGE CONFIG (SCRAMBLED FOR PRIVACY)
     // ---------------------------------------------------------
     const encodedBridge = "aHR0cHM6Ly9zY3JpcHQuZ29vZ2xlLmNvbS9tYWNyb3Mvcy9BS2Z5Y2J6YUtnVkJwcEVzMnFEUWhONUFSX3RWaExKcE9LQVotU0hfamVuUW9vYUcxZks4YkJpRlp5bTAzSmtqZFp0d1BFcGtBUS9leGVj";
 
-    // 2. This is the "Decoder Ring" function
-    function getBridge() {
+    function getDecodedURL() {
         try {
-            return atob(encodedBridge);
+            // Mobile-Safe Padding: Ensures length is a multiple of 4
+            let str = encodedBridge.replace(/[^A-Za-z0-9+/=]/g, "");
+            while (str.length % 4 !== 0) { str += "="; }
+            return atob(str);
         } catch(e) {
-            console.error("System Check: Decoder Error");
+            console.error("Decode Error");
             return "";
         }
     }
@@ -119,15 +121,16 @@
 
     async function recognize() {
         if (strokes.length === 0) return;
-        if (bridgeUrl.includes("PASTE_YOUR")) {
-            document.getElementById('status-bar').innerText = "Error: Bridge URL missing!";
+        
+        const bridgeUrl = getDecodedURL();
+        if (!bridgeUrl || bridgeUrl.includes("PASTE_YOUR")) {
+            document.getElementById('status-bar').innerText = "Error: Configuration Missing";
             return;
         }
 
-        document.getElementById('status-bar').innerText = "Connecting to Bridge...";
+        document.getElementById('status-bar').innerText = "Connecting...";
 
         try {
-            // We send the ink data as a URL parameter to your Google Script
             const response = await fetch(`${bridgeUrl}?ink=${encodeURIComponent(JSON.stringify(strokes))}`);
             const data = await response.json();
             
@@ -141,7 +144,8 @@
                 document.getElementById('status-bar').innerText = "Engine returned no match.";
             }
         } catch (error) {
-            document.getElementById('status-bar').innerText = "Bridge Error. Check Deployment.";
+            // Common Mobile fix: If it times out once, wait 5 seconds and try again
+            document.getElementById('status-bar').innerText = "Bridge Cold. Wait 5s and try again.";
             console.error(error);
         }
     }
